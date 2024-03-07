@@ -69,7 +69,7 @@ SNAPRAID_BIN="snapraid"
 MAIL_BIN="/usr/bin/mutt"
 
 # Slack
-SLACK_WEBHOOK_URL="https://hooks.slack.com/services/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"
+SLACK_WEBHOOK_URL="<<WEBHOOK_URL_HERE>>"
 
 function main(){
 
