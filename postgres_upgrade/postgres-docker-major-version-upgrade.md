@@ -4,25 +4,32 @@
 
 Thanks to Thomas Bandt for this article https://thomasbandt.com/postgres-docker-major-version-upgrade
 
+## Update 12/11/2025
+
+The method described below was successfully used to upgrade a Postgres 13 database used for Paperless-NGX to Postgres 18.  I have modified the original article to reflect the adaptations I made for this task
+
+## Introduction
+
 This quick guideline shows how to upgrade an existing database running on PostgreSQL major version X to major version Y, given that the database server is hosted in a Docker container.
 
 Published on Wed, June 14, 2023
 
 As it turns out, upgrading to a new major version of PostgreSQL takes work. So I had to google around and converse with ChatGTP4 to complete the puzzle. This quick guide is the result and is meant to be documentation for my future self. Hopefully, it will be helpful for you.
-Assumptions
 
-    The database is running in Docker.
-    Docker Compose is used to orchestrate all containers.
-    The Docker Compose file contains a service called db, which uses an official postgres image.
-    The container name when running will be myapp_db_1.
-    The application and database is called myapp.
+## Assumptions
 
-1. Export The Existing Data
+   1. The database is running in Docker.
+   2. Docker Compose is used to orchestrate all containers.
+   3. The Docker Compose file contains a service called **paperless-ngx**, which uses an official **postgres** image.
+   4. The container name when running will be **paperless_db**.
+   5. The application and database is called **paperless**.
+
+## 1. Export The Existing Data
 
     First, ensure not to risk any data loss. Create a backup of your existing database.
-    Connect to your server through SSH. Run docker-compose down to ensure no user request interferes with the following actions.
-    Start the database container only: docker-compose up -d db
-    Create a backup of the current database: docker exec -it myapp_db_1 pg_dumpall -U postgres > $HOME/myapp/upgrade_backup.sql. Make sure it was created correctly, e.g., by using Vim to look into it.
+    Connect to your server through SSH. Run `docker-compose down` to ensure no user request interferes with the following actions.
+    Start the database container only: `docker-compose up -d paperless_db`
+    Create a backup of the current database: `docker exec -it paperless_db pg_dumpall -U paperless > $HOME/myapp/upgrade_backup.sql`. Make sure it was created correctly, e.g., by using Vim to look into it.
     Stop the database container immediately docker stop myapp_db_1.
     We now got a complete dump of the whole database. If we imported it, it would fuck up our authentication scheme for some unknown reason to the author. To avoid that, we will extract the specific data for myapp first. Create a script called pg_extract.sh and make it executable using chmod +x pg_extract.sh (source):
 
