@@ -26,12 +26,12 @@ As it turns out, upgrading to a new major version of PostgreSQL takes work. So I
 
 ## 1. Export The Existing Data
 
-    First, ensure not to risk any data loss. Create a backup of your existing database.
-    Connect to your server through SSH. Run `docker-compose down` to ensure no user request interferes with the following actions.
-    Start the database container only: `docker-compose up -d paperless_db`
-    Create a backup of the current database: `docker exec -it paperless_db pg_dumpall -U paperless > $HOME/myapp/upgrade_backup.sql`. Make sure it was created correctly, e.g., by using Vim to look into it.
-    Stop the database container immediately docker stop myapp_db_1.
-    We now got a complete dump of the whole database. If we imported it, it would fuck up our authentication scheme for some unknown reason to the author. To avoid that, we will extract the specific data for myapp first. Create a script called pg_extract.sh and make it executable using chmod +x pg_extract.sh (source):
+   - First, ensure not to risk any data loss. Create a backup of your existing database.
+   - Connect to your server through SSH. Run `docker-compose down` to ensure no user request interferes with the following actions.
+   - Start the database container only: `docker-compose up -d paperless_db`
+   - Create a backup of the current database: `docker exec -it paperless_db pg_dumpall -U paperless > $HOME/myapp/upgrade_backup.sql`. Make sure it was created correctly, e.g., by using Vim to look into it.
+   - Stop the database container immediately docker stop myapp_db_1.
+   - We now got a complete dump of the whole database. If we imported it, it would fuck up our authentication scheme for some unknown reason to the author. To avoid that, we will extract the specific data for myapp first. Create a script called pg_extract.sh and make it executable using chmod +x pg_extract.sh (source):
 
 #!/bin/bash
 [ $# -lt 2 ] && { echo "Usage: $0 <postgresql dump> <dbname>"; exit 1; }
