@@ -4,6 +4,7 @@
 
 - [XDA Developers: Nvidia stopped supporting my GPU, so I started self-hosting LLMs with it](https://www.xda-developers.com/nvidia-stopped-supporting-my-gpu-so-i-started-self-hosting-llms-with-it/) - I admit, most of this article is directly lifted from this source, but I've updated it based on my own experience, added the bits on docker passthrough and am storing it for my own reference.
 - [Installing the NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html#installation) - these are the instructions direct from NVIDIA to install the NVIDIA Container Toolkit which enables passthough of the GPU to docker containers (I've only included the Ubuntu/Debian instructions as that's what I'm using)
+- [Running a Sample Workload](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/sample-workload.html)
 
 ## Introduction
 
@@ -153,19 +154,104 @@ curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dear
 
 14. Optionally, configure the repository to use experimental packages **(I didn't do this)**:
 
+```bash
 sudo sed -i -e '/experimental/ s/^#//g' /etc/apt/sources.list.d/nvidia-container-toolkit.list
+```
 
-Update the packages list from the repository:
+15. Update the packages list from the repository:
 
+```bash
 sudo apt-get update
+```
 
-Install the NVIDIA Container Toolkit packages:
+16. Install the NVIDIA Container Toolkit packages:
 
+```bash
 export NVIDIA_CONTAINER_TOOLKIT_VERSION=1.18.2-1
   sudo apt-get install -y \
       nvidia-container-toolkit=${NVIDIA_CONTAINER_TOOLKIT_VERSION} \
       nvidia-container-toolkit-base=${NVIDIA_CONTAINER_TOOLKIT_VERSION} \
       libnvidia-container-tools=${NVIDIA_CONTAINER_TOOLKIT_VERSION} \
       libnvidia-container1=${NVIDIA_CONTAINER_TOOLKIT_VERSION}
+```
 
+### Configuration
 
+#### Prerequisites
+
+- You installed a supported container engine (Docker, Containerd, CRI-O, Podman).
+- You installed the NVIDIA Container Toolkit.
+
+#### Configuring Docker
+
+17. Configure the container runtime by using the nvidia-ctk command:
+
+```bash
+sudo nvidia-ctk runtime configure --runtime=docker
+```
+
+The `nvidia-ctk` command modifies the `/etc/docker/daemon.json` file on the host. The file is updated so that Docker can use the NVIDIA Container Runtime.
+
+18. Restart the Docker daemon:
+
+```bash
+sudo systemctl restart docker
+```
+
+#### Rootless mode
+
+To configure the container runtime for Docker running in Rootless mode, follow these steps:
+
+19. Configure the container runtime by using the `nvidia-ctk` command:
+
+```bash
+nvidia-ctk runtime configure --runtime=docker --config=$HOME/.config/docker/daemon.json
+```
+
+20. Restart the Rootless Docker daemon:
+
+```bash
+systemctl --user restart docker
+```
+
+21. Configure `/etc/nvidia-container-runtime/config.toml` by using the `sudo nvidia-ctk` command:
+
+```bash
+sudo nvidia-ctk config --set nvidia-container-cli.no-cgroups --in-place
+```
+
+### Running A Sample Workload with Docker
+
+After you install and configure the toolkit and install an NVIDIA GPU Driver, you can verify your installation by running a sample workload.
+
+22. Run a sample CUDA container:
+
+```bash
+sudo docker run --rm --runtime=nvidia --gpus all ubuntu nvidia-smi
+```
+
+Your output should resemble the following output:
+
+```bash
+$ sudo docker run --rm --runtime=nvidia --gpus all ubuntu nvidia-smi
+Thu Feb  5 15:20:44 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.119.02             Driver Version: 580.119.02     CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA GeForce GTX 1080 Ti     Off |   00000000:01:00.0 Off |                  N/A |
+| 55%   71C    P2            104W /  250W |    3329MiB /  11264MiB |     44%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+```
