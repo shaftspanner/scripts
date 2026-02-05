@@ -3,7 +3,7 @@
 ## References:
 
 - [XDA Developers: Nvidia stopped supporting my GPU, so I started self-hosting LLMs with it](https://www.xda-developers.com/nvidia-stopped-supporting-my-gpu-so-i-started-self-hosting-llms-with-it/) - I admit, most of this article is directly lifted from this source, but I've updated it based on my own experience, added the bits on docker passthrough and am storing it for my own reference.
-- 
+- [Installing the NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html#installation) - these are the instructions direct from NVIDIA to install the NVIDIA Container Toolkit which enables passthough of the GPU to docker containers (I've only included the Ubuntu/Debian instructions as that's what I'm using)
 
 ## Introduction
 
@@ -23,6 +23,10 @@ Given that I've got several different uses for the GPU, I really didn't want to 
 So, the first order of business was to install the right Nvidia drivers on the Proxmox rig. But since Team Green removed support for Pascal cards with 590.48.01, I went with 580.119.02 instead. But as with everything Nvidia-related, the installation process was a convoluted mess but here’s a brief overview of the whole process:
 
 1. I ran `nano /etc/modprobe.d/blacklist-nouveau.conf` in my main node file to blacklist the Nvidia GPU. This involved pasting the following code into the file and hitting Ctrl+Shift+X to save and Y to head back to the Proxmox Shell.
+
+>### Note
+>
+> All the commands in this article need to be run as `sudo`
 
 ```bash
 blacklist nouveau
@@ -66,8 +70,102 @@ Thu Feb  5 14:36:17 2026
 
 ## LXC Drivers
 
-I have existing LXCs that I want to pass the GPU through to.  
+>### Note
+>
+> I am not saying this is the best way to passthough a GPU to LXCs, or even that it's correct or secure. I'm just documenting what worked for me.  I'd welcome comments if there's a better way of doing this
+
+I have existing privileged LXCs that I want to pass the GPU through to.  They are all basedon Debian 12.
+
+7. Still on the Proxmox host, I ran `ls -l /dev/nvidia*` to identify the device number associated with the GPU components.  In my particular setup, this is the result:
+
+```bash
+# ls -l /dev/nvidia*
+crw-rw-rw- 1 root root 195,   0 Feb  3 17:57 /dev/nvidia0
+crw-rw-rw- 1 root root 195, 255 Feb  3 17:57 /dev/nvidiactl
+crw-rw-rw- 1 root root 506,   0 Feb  3 17:57 /dev/nvidia-uvm
+crw-rw-rw- 1 root root 506,   1 Feb  3 17:57 /dev/nvidia-uvm-tools
+
+/dev/nvidia-caps:
+total 0
+cr-------- 1 root root 509, 1 Feb  3 17:57 nvidia-cap1
+cr--r--r-- 1 root root 509, 2 Feb  3 17:57 nvidia-cap2
+```
+Make a note of these numbers in your setup - you'll need them later
+
+8.  On the Proxmox host I executed the nano `/etc/pve/lxc/206.conf` command to open the configuration file for my LXC and added the following lines of code to mount the GPU onto the container and tweak the permissions to let Ollama call upon it when running LLMs
+
+```bash
+features: nesting=1,fuse=1,keyctl=1
+lxc.apparmor.profile: unconfined
+lxc.cgroup2.devices.allow: c 195:* rwm
+lxc.cgroup2.devices.allow: c 195:255 rwm
+lxc.cgroup2.devices.allow: c 506:* rwm
+lxc.mount.entry: /dev/nvidia0 dev/nvidia0 none bind,optional,create=file
+lxc.mount.entry: /dev/nvidiactl dev/nvidiactl none bind,optional,create=file
+lxc.mount.entry: /dev/nvidia-uvm dev/nvidia-uvm none bind,optional,create=file
+lxc.mount.entry: /dev/nvidia-uvm-tools dev/nvidia-uvm-tools none bind,optional,create=file
+lxc.mount.entry: /dev/nvidia-modeset dev/nvidia-modeset none bind,optional,create=file
+lxc.mount.entry: /dev/nvidia-caps/nvidia-cap1 dev/nvidia-caps/nvidia-cap1 none bind,optional,create=file
+lxc.mount.entry: /dev/nvidia-caps/nvidia-cap2 dev/nvidia-caps/nvidia-cap2 none bind,optional,create=file
+```
+
+9. With the tweaks on the PVE host complete, I started the LXC and ran `apt update && apt upgrade` to install the latest packages. 
+10. Then, I ran the same set of commands to install Nvidia drivers on the LXC. The only difference was the --no-kernel-modules argument when running the executable, as the installation would fail if I didn’t add it.
+
+```bash
+wget https://us.download.nvidia.com/XFree86/Linux-x86_64/580.119.02/NVIDIA-Linux-x86_64-580.119.02.run
+chmod +x NVIDIA-Linux-x86_64-580.119.02.run
+./NVIDIA-Linux-x86_64-580.119.02.run --no-kernel-modules
+```
+
+11. I ran nvidia-smi inside the LXC, and the same monitoring UI as earlier popped up confirming the GPU is now available inside the LXC
+
+## Docker Drivers
+
+Inside my LXCs, I run everything in Docker, so the next stage is to make the GPUs available to Docker:
 
 >### Note
 >
-> I am not saying this is the best way to passthough a GPU, or even that it's correct or secure. I'm just documenting what worked for me.  I'd welcome comments if there's a better way of doing this
+> There is a known issue on systems where `systemd` cgroup drivers are used that cause containers to lose access to requested GPUs when `systemctl daemon reload` is run. Refer to the troubleshooting documentation for more information.
+
+### With `apt`: Ubuntu, Debian
+
+>### Note
+>
+> These instructions should work for any Debian-derived distribution.
+
+12. Install the prerequisites for the instructions below:
+
+```bash
+apt-get update && sudo apt-get install -y --no-install-recommends \
+ curl \
+ gnupg2
+```
+
+13. Configure the production repository:
+
+```bash
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg \
+  && curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+    sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+    sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+```
+
+14. Optionally, configure the repository to use experimental packages **(I didn't do this)**:
+
+sudo sed -i -e '/experimental/ s/^#//g' /etc/apt/sources.list.d/nvidia-container-toolkit.list
+
+Update the packages list from the repository:
+
+sudo apt-get update
+
+Install the NVIDIA Container Toolkit packages:
+
+export NVIDIA_CONTAINER_TOOLKIT_VERSION=1.18.2-1
+  sudo apt-get install -y \
+      nvidia-container-toolkit=${NVIDIA_CONTAINER_TOOLKIT_VERSION} \
+      nvidia-container-toolkit-base=${NVIDIA_CONTAINER_TOOLKIT_VERSION} \
+      libnvidia-container-tools=${NVIDIA_CONTAINER_TOOLKIT_VERSION} \
+      libnvidia-container1=${NVIDIA_CONTAINER_TOOLKIT_VERSION}
+
+
