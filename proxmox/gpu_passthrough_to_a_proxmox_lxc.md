@@ -119,7 +119,7 @@ chmod +x NVIDIA-Linux-x86_64-580.119.02.run
 ./NVIDIA-Linux-x86_64-580.119.02.run --no-kernel-modules
 ```
 
-11. I ran nvidia-smi inside the LXC, and the same monitoring UI as earlier popped up confirming the GPU is now available inside the LXC
+11. I ran `nvidia-smi` inside the LXC, and the same monitoring UI as earlier popped up confirming the GPU is now available inside the LXC
 
 ## Docker Drivers
 
